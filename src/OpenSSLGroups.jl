@@ -16,10 +16,28 @@ using Base.GMP
 
 export octet, order, value
 
-const ctx = ccall((:BN_CTX_new, libcrypto), Ptr{Cvoid}, ()) # may need to be set at runtime and etc... 
-
 include("utils.jl")
+include("context.jl")
 include("point.jl")
 include("curves.jl")
+
+# The context is a scratchspace and never leaves internal function boundary, hence, using threadid is appropriate
+const THREAD_CTXS = ThreadLocal{OpenSSLContext}()
+
+function get_ctx()
+    @assert haskey(THREAD_CTXS) "Thread context not initialized"
+    return THREAD_CTXS[].ctx
+end
+
+function __init__()
+    @sync begin
+        for tid in 1:Threads.nthreads()
+            Threads.@spawn begin
+                THREAD_CTXS[] = OpenSSLContext()
+            end
+        end
+    end
+end
+
 
 end # module OpenSSLGroups

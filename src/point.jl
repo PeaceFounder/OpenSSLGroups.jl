@@ -1,254 +1,261 @@
 abstract type OpenSSLPoint <: AbstractPoint end
 
 function generator(::Type{P}) where P <: OpenSSLPoint
-
     group = group_pointer(P)
-
-    result = ccall((:EC_POINT_new, libcrypto), Ptr{Cvoid}, (Ptr{Cvoid},), group)
-
-    point = ccall((:EC_GROUP_get0_generator, libcrypto), Ptr{Cvoid}, 
-                      (Ptr{Cvoid},), group)
-
-    return P(point) # copy is not necessary as the public API is nonmutating
+    result = @ccall libcrypto.EC_POINT_new(group::Ptr{Cvoid})::Ptr{Cvoid}
+    point = @ccall libcrypto.EC_GROUP_get0_generator(group::Ptr{Cvoid})::Ptr{Cvoid}
+    return P(point)
 end
 
 (::Type{P})() where P <: OpenSSLPoint = generator(P)
 
-
 function Base.:(==)(x::P, y::P) where P <: OpenSSLPoint
-
+    ctx = get_ctx()
     group = group_pointer(P)
-
-    ret = ccall((:EC_POINT_cmp, libcrypto), Cint,
-                (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}),
-                group, pointer(x), pointer(y), ctx)
-
+    ret = @ccall libcrypto.EC_POINT_cmp(
+        group::Ptr{Cvoid}, 
+        pointer(x)::Ptr{Cvoid}, 
+        pointer(y)::Ptr{Cvoid}, 
+        ctx::Ptr{Cvoid}
+    )::Cint
     return ret == 0
 end
-
 
 Base.pointer(p::OpenSSLPoint) = p.pointer
 
 function Base.iszero(point::P) where P <: OpenSSLPoint
-
     group = group_pointer(P)
-
-    # Check if point is at infinity
-    ret = ccall((:EC_POINT_is_at_infinity, libcrypto), Cint,
-                (Ptr{Cvoid}, Ptr{Cvoid}),
-                group, pointer(point))
-
+    ret = @ccall libcrypto.EC_POINT_is_at_infinity(
+        group::Ptr{Cvoid}, 
+        pointer(point)::Ptr{Cvoid}
+    )::Cint
     return ret == 1
 end
 
-
 function Base.zero(::Type{P}) where P <: OpenSSLPoint
-
     group = group_pointer(P)
-
-    result = ccall((:EC_POINT_new, libcrypto), Ptr{Cvoid}, (Ptr{Cvoid},), group)
-
-    # Set point at infinity
-    ret = ccall((:EC_POINT_set_to_infinity, libcrypto), Cint,
-                (Ptr{Cvoid}, Ptr{Cvoid}), group, result)
+    result = @ccall libcrypto.EC_POINT_new(group::Ptr{Cvoid})::Ptr{Cvoid}
+    ret = @ccall libcrypto.EC_POINT_set_to_infinity(
+        group::Ptr{Cvoid}, 
+        result::Ptr{Cvoid}
+    )::Cint
     if ret != 1
         error("Failed to set point at infinity")
     end
-
     return P(result)
 end
 
-
 function (::Type{P})(bytes::Vector{UInt8}) where P <: OpenSSLPoint
-
+    ctx = get_ctx()
     group = group_pointer(P)
-
-    point = ccall((:EC_POINT_new, OpenSSL_jll.libcrypto), Ptr{Cvoid}, (Ptr{Cvoid},), group)
+    point = @ccall OpenSSL_jll.libcrypto.EC_POINT_new(group::Ptr{Cvoid})::Ptr{Cvoid}
     if point == C_NULL
         error("Failed to create new EC_POINT")
     end
 
-    ret = ccall((:EC_POINT_oct2point, OpenSSL_jll.libcrypto), Cint,
-                (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{UInt8}, Csize_t, Ptr{Cvoid}),
-                group, point, bytes, length(bytes), ctx)
+    ret = @ccall OpenSSL_jll.libcrypto.EC_POINT_oct2point(
+        group::Ptr{Cvoid},
+        point::Ptr{Cvoid},
+        bytes::Ptr{UInt8},
+        length(bytes)::Csize_t,
+        ctx::Ptr{Cvoid}
+    )::Cint
     if ret != 1
-        ccall((:EC_POINT_free, OpenSSL_jll.libcrypto), Cvoid, (Ptr{Cvoid},), point)
+        @ccall OpenSSL_jll.libcrypto.EC_POINT_free(point::Ptr{Cvoid})::Cvoid
         error("Failed to initialize point from bytes")
     end
-
     return P(point)    
 end
 
 function octet_legacy(point::P) where P <: OpenSSLPoint
-    
+    ctx = get_ctx()
     group = group_pointer(P)
-
     buffer_size = 200  # Adjust if needed
     buffer = Vector{UInt8}(undef, buffer_size)
 
-    _length = ccall((:EC_POINT_point2oct, libcrypto), Csize_t,
-                    (Ptr{Cvoid}, Ptr{Cvoid}, Cint, Ptr{UInt8}, Csize_t, Ptr{Cvoid}),
-                    group, pointer(point), 4, buffer, buffer_size, ctx)  # 4 is POINT_CONVERSION_UNCOMPRESSED
+    GC.@preserve buffer begin
+        _length = @ccall libcrypto.EC_POINT_point2oct(
+            group::Ptr{Cvoid},
+            pointer(point)::Ptr{Cvoid},
+            4::Cint,
+            buffer::Ptr{UInt8},
+            buffer_size::Csize_t,
+            ctx::Ptr{Cvoid}
+        )::Csize_t
+    end
+
     if _length == 0
         error("Failed to convert result to octet string")
     end
-
     return buffer[1:_length]
 end
 
 function Base.:+(x::P, y::P) where P <: OpenSSLPoint
-
+    ctx = get_ctx()
     group = group_pointer(P)
-    result = ccall((:EC_POINT_new, libcrypto), Ptr{Cvoid}, (Ptr{Cvoid},), group)
+    result = @ccall libcrypto.EC_POINT_new(group::Ptr{Cvoid})::Ptr{Cvoid}
 
-    # Perform point addition: result = result + point2
-    ret = ccall((:EC_POINT_add, libcrypto), Cint, (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}), group, result, pointer(x), pointer(y), ctx)
+    ret = @ccall libcrypto.EC_POINT_add(
+        group::Ptr{Cvoid},
+        result::Ptr{Cvoid},
+        pointer(x)::Ptr{Cvoid},
+        pointer(y)::Ptr{Cvoid},
+        ctx::Ptr{Cvoid}
+    )::Cint
     if ret != 1
         error("Failed in point addition")
     end
-
     return P(result)
 end
 
-
 function Base.:*(k::Integer, point::P) where P <: OpenSSLPoint
-
-    scalar = ccall((:BN_new, libcrypto), Ptr{Cvoid}, ())
-
+    scalar = @ccall libcrypto.BN_new()::Ptr{Cvoid}
     scalar_hex = string(k, base=16)
-    ret = ccall((:BN_hex2bn, libcrypto), Cint, (Ptr{Ptr{Cvoid}}, Cstring), Ref(scalar), scalar_hex)
+    ret = @ccall libcrypto.BN_hex2bn(
+        Ref(scalar)::Ptr{Ptr{Cvoid}}, 
+        scalar_hex::Cstring
+    )::Cint
     if ret == 0
         error("Failed to set scalar")
     end
 
+    ctx = get_ctx()
     group = group_pointer(P)
-    result = ccall((:EC_POINT_new, libcrypto), Ptr{Cvoid}, (Ptr{Cvoid},), group)    
+    result = @ccall libcrypto.EC_POINT_new(group::Ptr{Cvoid})::Ptr{Cvoid}    
 
-    ret = ccall((:EC_POINT_mul, libcrypto), Cint, (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}), group, result, C_NULL, pointer(point), scalar, ctx)
+    ret = @ccall libcrypto.EC_POINT_mul(
+        group::Ptr{Cvoid},
+        result::Ptr{Cvoid},
+        C_NULL::Ptr{Cvoid},
+        pointer(point)::Ptr{Cvoid},
+        scalar::Ptr{Cvoid},
+        ctx::Ptr{Cvoid}
+    )::Cint
     if ret != 1
         error("Failed in point multiplication")
     end
 
+    openssl_bignum_free(scalar)
     return P(result)
 end
 
 Base.:*(point::OpenSSLPoint, k::Integer) = k * point
 
-function Base.:-(point::P) where P <: OpenSSLPoint # the substraction then is ensured by AbstractPoint
-
+function Base.:-(point::P) where P <: OpenSSLPoint
+    ctx = get_ctx()
     group = group_pointer(P)
-
-    # Create a temporary point for the inverted point
     inverted_point = copy(point)
 
-    ret = ccall((:EC_POINT_invert, libcrypto), Cint, (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}), group, pointer(inverted_point), ctx)
+    ret = @ccall libcrypto.EC_POINT_invert(
+        group::Ptr{Cvoid},
+        pointer(inverted_point)::Ptr{Cvoid},
+        ctx::Ptr{Cvoid}
+    )::Cint
     if ret != 1
         error("Failed to invert point")
     end
-
     return P(inverted_point)
 end
 
 function Base.copy(point::P) where P <: OpenSSLPoint
-
     group = group_pointer(P)
-    result = ccall((:EC_POINT_new, libcrypto), Ptr{Cvoid}, (Ptr{Cvoid},), group)
+    result = @ccall libcrypto.EC_POINT_new(group::Ptr{Cvoid})::Ptr{Cvoid}
     
-    ret = ccall((:EC_POINT_copy, libcrypto), Cint, (Ptr{Cvoid}, Ptr{Cvoid}), result, pointer(point))
+    ret = @ccall libcrypto.EC_POINT_copy(
+        result::Ptr{Cvoid},
+        pointer(point)::Ptr{Cvoid}
+    )::Cint
     if ret != 1
         error("Failed to copy point")
     end
-
     return P(result)
 end
 
-
-function gx(point::P) where P <: OpenSSLPoint
-
-    F = field(P)
-    x, y = value(point)
-
-    return F(x)
-end
-
-function gy(point::P) where P <: OpenSSLPoint
-    
-    F = field(P)
-    x, y = value(point)
-
-    return F(y)
-end
-
-function (::Type{P})(x::F, y::F) where {P <: OpenSSLPoint, F <: Field}
-
-    @check F == field(P)
-
-    x_bytes = octet(x)
-    y_bytes = octet(y)
-
-    po = UInt8[4, x_bytes..., y_bytes...]
-
-    return P(po)
-end
-
-
 function order(::Type{P}) where P <: OpenSSLPoint
-
+    ctx = get_ctx()
     group = group_pointer(P)
+    order = @ccall libcrypto.BN_new()::Ptr{Cvoid}
 
-    order = ccall((:BN_new, libcrypto), Ptr{Cvoid}, ())
-
-    # Get the order of the curve
-    ret = ccall((:EC_GROUP_get_order, libcrypto), Cint,
-                (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}),
-                group, order, ctx)
+    ret = @ccall libcrypto.EC_GROUP_get_order(
+        group::Ptr{Cvoid},
+        order::Ptr{Cvoid},
+        ctx::Ptr{Cvoid}
+    )::Cint
     if ret != 1
         error("Failed to get order")
     end
 
-    return order |> bn2bigint
+    order_bigint = order |> bn2bigint
+    openssl_bignum_free(order)
+    return order_bigint
 end
-
 
 function cofactor(::Type{P}) where P <: OpenSSLPoint
-
+    ctx = get_ctx()
     group = group_pointer(P)
+    cofactor = @ccall libcrypto.BN_new()::Ptr{Cvoid}
+    
+    ret = @ccall libcrypto.EC_GROUP_get_cofactor(
+        group::Ptr{Cvoid},
+        cofactor::Ptr{Cvoid},
+        ctx::Ptr{Cvoid}
+    )::Cint
 
-    cofactor = ccall((:BN_new, libcrypto), Ptr{Cvoid}, ())
-    ret = ccall((:EC_GROUP_get_cofactor, libcrypto), Cint,
-                (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}),
-                group, cofactor, ctx)
-
-    return cofactor |> bn2bigint
+    cofactor_bigint = cofactor |> bn2bigint
+    openssl_bignum_free(cofactor)
+    return cofactor_bigint
 end
 
+function gx(point::P) where P <: OpenSSLPoint
+    F = field(P)
+    x, y = value(point)
+    return F(x)
+end
+
+function gy(point::P) where P <: OpenSSLPoint
+    F = field(P)
+    x, y = value(point)
+    return F(y)
+end
+
+function (::Type{P})(x::F, y::F) where {P <: OpenSSLPoint, F <: Field}
+    @check F == field(P)
+    x_bytes = octet(x)
+    y_bytes = octet(y)
+    po = UInt8[4, x_bytes..., y_bytes...]
+    return P(po)
+end
 
 ### Binary curve point specializations
 
 abstract type OpenSSLBinaryPoint <: OpenSSLPoint end
 
 function value(point::P) where P <: OpenSSLBinaryPoint
-
+    ctx = get_ctx()
     group = group_pointer(P)
-
-    gx = ccall((:BN_new, libcrypto), Ptr{Cvoid}, ())
-    gy = ccall((:BN_new, libcrypto), Ptr{Cvoid}, ())
+    gx = @ccall libcrypto.BN_new()::Ptr{Cvoid}
+    gy = @ccall libcrypto.BN_new()::Ptr{Cvoid}
     
-    ret = ccall((:EC_POINT_get_affine_coordinates_GF2m, libcrypto), Cint,
-                (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}),
-                group, pointer(point), gx, gy, ctx)
+    ret = @ccall libcrypto.EC_POINT_get_affine_coordinates_GF2m(
+        group::Ptr{Cvoid},
+        pointer(point)::Ptr{Cvoid},
+        gx::Ptr{Cvoid},
+        gy::Ptr{Cvoid},
+        ctx::Ptr{Cvoid}
+    )::Cint
     if ret != 1
         error("Failed to get generator coordinates")
     end
 
     F = field(P)
     M = div(bitlength(F), 8, RoundUp)
-
     xf, yf = F(bn2octet(gx, M)), F(bn2octet(gy, M))
 
-    return convert(BitVector, xf), convert(BitVector, yf) # Perhaps I should rather return a tuole of field elements here?
+    openssl_bignum_free(gx)
+    openssl_bignum_free(gy)
+    
+    return convert(BitVector, xf), convert(BitVector, yf)
 end
-
 
 function reducer(bytes::Vector{UInt8})
     # Create a BitVector with enough space for all bits
@@ -270,39 +277,39 @@ function reducer(bytes::Vector{UInt8})
     return bits[N:end]
 end
 
-
 function curve_parameters(::Type{P}) where P <: OpenSSLBinaryPoint
-
+    ctx = get_ctx()
     group = group_pointer(P)
 
-    p = ccall((:BN_new, libcrypto), Ptr{Cvoid}, ())  # Field characteristic (prime p)
+    p = @ccall libcrypto.BN_new()::Ptr{Cvoid}
+    a = @ccall libcrypto.BN_new()::Ptr{Cvoid}
+    b = @ccall libcrypto.BN_new()::Ptr{Cvoid}
 
-    #m = Ref{Cint}()
-    a = ccall((:BN_new, libcrypto), Ptr{Cvoid}, ())  # Curve parameter a
-    b = ccall((:BN_new, libcrypto), Ptr{Cvoid}, ())  # Curve parameter b
-    
+    ret = @ccall libcrypto.EC_GROUP_get_curve_GF2m(
+        group::Ptr{Cvoid},
+        p::Ptr{Cvoid},
+        a::Ptr{Cvoid},
+        b::Ptr{Cvoid},
+        ctx::Ptr{Cvoid}
+    )::Cint
 
-    # For binary curves, we use EC_GROUP_get_curve_GF2m instead of GFp
-    ret = ccall((:EC_GROUP_get_curve_GF2m, libcrypto), Cint,
-                (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}),
-                group, p, a, b, ctx)
-
-    hex_str = unsafe_string(ccall((:BN_bn2hex, libcrypto), Ptr{UInt8}, 
-                                  (Ptr{Cvoid},), p))
+    hex_str = unsafe_string(@ccall libcrypto.BN_bn2hex(p::Ptr{Cvoid})::Ptr{UInt8})
 
     m = reducer(hex2bytes(hex_str))
+    a_octet = bn2octet(a)
+    b_octet = bn2octet(b)
+    
+    openssl_bignum_free(p)
+    openssl_bignum_free(a)
+    openssl_bignum_free(b)
 
-    return m, bn2octet(a), bn2octet(b)
+    return m, a_octet, b_octet
 end
-
 
 function field(::Type{P}) where P <: OpenSSLBinaryPoint
-    
     reducer, = curve_parameters(P)
-
     return @F2PB{reducer}
 end
-
 
 (::Type{P})((x, y)::Tuple{BitVector, BitVector}) where P <: OpenSSLBinaryPoint = P(x, y)
 
@@ -311,30 +318,22 @@ function (::Type{P})(x::T, y::T) where {P <: OpenSSLBinaryPoint, T <: Union{BitV
     return P(F(x), F(y))
 end
 
-
 function spec(::Type{P}) where P <: OpenSSLBinaryPoint
-
     _, a_octet, b_octet = curve_parameters(P)
-    
     F = field(P)
-
     basis = spec(F)
     n = order(P)
-
     M = div(bitlength(F), 8, RoundUp)
     
     a_bits = convert(BitVector, F(expand(a_octet, M)))
     b_bits = convert(BitVector, F(expand(b_octet, M)))
     
     _cofactor = cofactor(P) |> Int
-
     gx, gy = value(generator(P))
-
     names = [string(lowercase(string(nameof(P))))]
     
     return EC2N(basis, n, a_bits, b_bits, _cofactor, gx, gy; names)
 end
-
 
 ### Prime curve point specializations
 
@@ -352,50 +351,64 @@ modulus(::Type{P}) where P <: OpenSSLPrimePoint = curve_parameters(P) |> first
 field(::Type{P}) where P <: OpenSSLPrimePoint = FP{static(modulus(P))}
 
 function curve_parameters(::Type{P}) where P <: OpenSSLPrimePoint
-
+    ctx = get_ctx()
     group = group_pointer(P)
 
-    p = ccall((:BN_new, libcrypto), Ptr{Cvoid}, ())  # Field characteristic (prime p)
-    a = ccall((:BN_new, libcrypto), Ptr{Cvoid}, ())  # Curve parameter a
-    b = ccall((:BN_new, libcrypto), Ptr{Cvoid}, ())  # Curve parameter b
+    p = @ccall libcrypto.BN_new()::Ptr{Cvoid}
+    a = @ccall libcrypto.BN_new()::Ptr{Cvoid}
+    b = @ccall libcrypto.BN_new()::Ptr{Cvoid}
     
-    # Get field parameters
-    ret = ccall((:EC_GROUP_get_curve_GFp, libcrypto), Cint,
-                (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}),
-                group, p, a, b, ctx)
+    ret = @ccall libcrypto.EC_GROUP_get_curve_GFp(
+        group::Ptr{Cvoid},
+        p::Ptr{Cvoid},
+        a::Ptr{Cvoid},
+        b::Ptr{Cvoid},
+        ctx::Ptr{Cvoid}
+    )::Cint
     if ret != 1
         error("Failed to get curve parameters")
     end
 
-    return bn2bigint(p), bn2bigint(a), bn2bigint(b)
+    p_bigint = bn2bigint(p)
+    a_bigint = bn2bigint(a)
+    b_bigint = bn2bigint(b)
+
+    openssl_bignum_free(p)
+    openssl_bignum_free(a)
+    openssl_bignum_free(b)
+
+    return p_bigint, a_bigint, b_bigint
 end
 
-
-function spec(::Type{P}) where P  <: OpenSSLPoint
-    
+function spec(::Type{P}) where P <: OpenSSLPoint
     p, a, b = curve_parameters(P)
     n = order(P)
-
     _cofactor = cofactor(P) |> Int
-
     gx, gy = value(generator(P))
-
     names = [string(lowercase(string(nameof(P))))]
-
     return ECP(p, n, a, b, _cofactor, gx, gy; names)
 end
 
-
 function value(point::P) where P <: OpenSSLPrimePoint
-
+    ctx = get_ctx()
     group = group_pointer(P)
 
-    gx = ccall((:BN_new, libcrypto), Ptr{Cvoid}, ())
-    gy = ccall((:BN_new, libcrypto), Ptr{Cvoid}, ())
+    gx = @ccall libcrypto.BN_new()::Ptr{Cvoid}
+    gy = @ccall libcrypto.BN_new()::Ptr{Cvoid}
 
-    ret = ccall((:EC_POINT_get_affine_coordinates, libcrypto), Cint,
-                (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}),
-                group, pointer(point), gx, gy, ctx)
+    ret = @ccall libcrypto.EC_POINT_get_affine_coordinates(
+        group::Ptr{Cvoid},
+        pointer(point)::Ptr{Cvoid},
+        gx::Ptr{Cvoid},
+        gy::Ptr{Cvoid},
+        ctx::Ptr{Cvoid}
+    )::Cint
 
-    return bn2bigint(gx), bn2bigint(gy)
+    gx_bigint = bn2bigint(gx)
+    gy_bigint = bn2bigint(gy)
+
+    openssl_bignum_free(gx)
+    openssl_bignum_free(gy)
+
+    return gx_bigint, gy_bigint
 end

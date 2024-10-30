@@ -87,44 +87,67 @@
 # 934	brainpoolP512t1	brainpoolP512t1
 # 1172	SM2	sm2
 
+
 macro prime_curve(curve_name, struct_name::Symbol)
+
     # Handle both Symbol and String representations
     curve_str = if curve_name isa Symbol
         String(curve_name)
     else
-        # Remove outer quotation marks if present and convert to string
-        string(curve_name) #[2:end-1]
+        string(curve_name) 
     end
     
     return quote
-        struct $(esc(struct_name)) <: OpenSSLPrimePoint
+        mutable struct $(esc(struct_name)) <: OpenSSLPrimePoint
             pointer::Ptr{Nothing}
-            $(esc(struct_name))(x::Ptr{Nothing}) = new(x)
+            function $(esc(struct_name))(x::Ptr{Nothing})
+                point = new(x)
+
+                finalizer(point) do p
+                    if p.pointer != C_NULL
+                        @ccall libcrypto.EC_POINT_free(p.pointer::Ptr{Nothing})::Cvoid
+                        p.pointer = C_NULL
+                    end
+                end
+
+                return point
+            end
         end
         
         $(esc(:group_pointer))(::Type{$(esc(struct_name))}) = $(esc(:group_pointer))($(esc(:get_curve_nid))($curve_str))
     end
 end
+
 
 macro binary_curve(curve_name, struct_name::Symbol)
+
     # Handle both Symbol and String representations
     curve_str = if curve_name isa Symbol
         String(curve_name)
     else
-        # Remove outer quotation marks if present and convert to string
-        string(curve_name) #[2:end-1]
+        string(curve_name) 
     end
     
     return quote
-        struct $(esc(struct_name)) <: OpenSSLBinaryPoint
+        mutable struct $(esc(struct_name)) <: OpenSSLBinaryPoint
             pointer::Ptr{Nothing}
-            $(esc(struct_name))(x::Ptr{Nothing}) = new(x)
+            function $(esc(struct_name))(x::Ptr{Nothing})
+                point = new(x)
+
+                finalizer(point) do p
+                    if p.pointer != C_NULL
+                        @ccall libcrypto.EC_POINT_free(p.pointer::Ptr{Nothing})::Cvoid
+                        p.pointer = C_NULL
+                    end
+                end
+
+                return point
+            end
         end
         
         $(esc(:group_pointer))(::Type{$(esc(struct_name))}) = $(esc(:group_pointer))($(esc(:get_curve_nid))($curve_str))
     end
 end
-
 
 # Prime Curves (secp, prime, brainpoolP)
 @prime_curve secp112r1 SecP112r1
