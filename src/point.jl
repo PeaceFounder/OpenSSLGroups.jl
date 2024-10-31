@@ -231,30 +231,39 @@ end
 abstract type OpenSSLBinaryPoint <: OpenSSLPoint end
 
 function value(point::P) where P <: OpenSSLBinaryPoint
-    ctx = get_ctx()
-    group = group_pointer(P)
-    gx = @ccall libcrypto.BN_new()::Ptr{Cvoid}
-    gy = @ccall libcrypto.BN_new()::Ptr{Cvoid}
-    
-    ret = @ccall libcrypto.EC_POINT_get_affine_coordinates_GF2m(
-        group::Ptr{Cvoid},
-        pointer(point)::Ptr{Cvoid},
-        gx::Ptr{Cvoid},
-        gy::Ptr{Cvoid},
-        ctx::Ptr{Cvoid}
-    )::Cint
-    if ret != 1
-        error("Failed to get generator coordinates")
+
+    if iszero(point)
+
+        F = field(P)
+        return convert(BitVector, F(0)), convert(BitVector, F(0))
+
+    else
+
+        ctx = get_ctx()
+        group = group_pointer(P)
+        gx = @ccall libcrypto.BN_new()::Ptr{Cvoid}
+        gy = @ccall libcrypto.BN_new()::Ptr{Cvoid}
+        
+        ret = @ccall libcrypto.EC_POINT_get_affine_coordinates_GF2m(
+            group::Ptr{Cvoid},
+            pointer(point)::Ptr{Cvoid},
+            gx::Ptr{Cvoid},
+            gy::Ptr{Cvoid},
+            ctx::Ptr{Cvoid}
+        )::Cint
+        if ret != 1
+            error("Failed to get generator coordinates")
+        end
+
+        F = field(P)
+        M = div(bitlength(F), 8, RoundUp)
+        xf, yf = F(bn2octet(gx, M)), F(bn2octet(gy, M))
+
+        openssl_bignum_free(gx)
+        openssl_bignum_free(gy)
+        
+        return convert(BitVector, xf), convert(BitVector, yf)
     end
-
-    F = field(P)
-    M = div(bitlength(F), 8, RoundUp)
-    xf, yf = F(bn2octet(gx, M)), F(bn2octet(gy, M))
-
-    openssl_bignum_free(gx)
-    openssl_bignum_free(gy)
-    
-    return convert(BitVector, xf), convert(BitVector, yf)
 end
 
 function reducer(bytes::Vector{UInt8})
