@@ -1,5 +1,7 @@
 # OpenSSLGroups.jl
 
+[![codecov](https://codecov.io/gh/PeaceFounder/OpenSSLGroups.jl/graph/badge.svg?token=566UV5TQ24)](https://codecov.io/gh/PeaceFounder/OpenSSLGroups.jl)
+
 OpenSSLGroups.jl provides high-performance cryptographic group operations by wrapping OpenSSL's implementation while maintaining full compatibility with the [CryptoGroups.jl](https://github.com/PeaceFounder/CryptoGroups.jl) interface. This package offers a 10-20x performance improvement for exponentiations over pure Julia implementations while preserving type safety and ease of use.
 
 ## Features

@@ -77,8 +77,6 @@ function Base.convert(::Type{P}, x::Vector{UInt8}) where P <: OpenSSLPoint
     end
 end
 
-# Base.convert(::Type{P}, x::P) where P <: OpenSSLPoint = x
-
 function Base.convert(::Type{ECPoint{P, S}}, x::Vector{UInt8}; allow_zero=false) where {P <: OpenSSLPoint, S}
     return ECPoint{P, S}(convert(P, x); allow_zero)
 end
@@ -86,6 +84,5 @@ end
 function Base.convert(::Type{ECPoint{P, S}}, x::NTuple{2}; allow_zero=false) where {P <: OpenSSLPoint, S}
     return ECPoint{P, S}(convert(P, x); allow_zero)
 end
-
 
 end # module OpenSSLGroups
