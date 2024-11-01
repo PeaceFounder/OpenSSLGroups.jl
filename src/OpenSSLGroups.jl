@@ -22,7 +22,7 @@ include("point.jl")
 include("curves.jl")
 
 # The context is a scratchspace and never leaves internal function boundary, hence, using threadid is appropriate
-const THREAD_CTXS = ThreadLocal{OpenSSLContext}()
+global THREAD_CTXS::ThreadLocal{OpenSSLContext}
 
 function get_ctx()
     @assert haskey(THREAD_CTXS) "Thread context not initialized"
@@ -30,12 +30,11 @@ function get_ctx()
 end
 
 function __init__()
-    @sync begin
-        for tid in 1:Threads.nthreads()
-            Threads.@spawn begin
-                THREAD_CTXS[] = OpenSSLContext()
-            end
-        end
+
+    global THREAD_CTXS = ThreadLocal{OpenSSLContext}()
+
+    for tid in 1:Threads.nthreads()
+        THREAD_CTXS[tid] = OpenSSLContext()
     end
 end
 
@@ -84,5 +83,11 @@ end
 function Base.convert(::Type{ECPoint{P, S}}, x::NTuple{2}; allow_zero=false) where {P <: OpenSSLPoint, S}
     return ECPoint{P, S}(convert(P, x); allow_zero)
 end
+
+# OpenSSL already provides all the checks
+function Base.:+(x::ECPoint{P, S}, y::ECPoint{P, S}) where {P <: OpenSSLPoint, S}
+    return ECPoint{P, S}(x.p + y.p; skip_validation=true)
+end
+
 
 end # module OpenSSLGroups

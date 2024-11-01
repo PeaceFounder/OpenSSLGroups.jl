@@ -2,14 +2,16 @@
 
 [![codecov](https://codecov.io/gh/PeaceFounder/OpenSSLGroups.jl/graph/badge.svg?token=566UV5TQ24)](https://codecov.io/gh/PeaceFounder/OpenSSLGroups.jl)
 
-OpenSSLGroups.jl provides high-performance cryptographic group operations by wrapping OpenSSL's implementation while maintaining full compatibility with the [CryptoGroups.jl](https://github.com/PeaceFounder/CryptoGroups.jl) interface. This package offers a 10-20x performance improvement for exponentiations over pure Julia implementations while preserving type safety and ease of use.
+OpenSSLGroups.jl provides high-performance cryptographic group operations by wrapping OpenSSL implementations while maintaining full compatibility with the [CryptoGroups.jl](https://github.com/PeaceFounder/CryptoGroups.jl) interface. This package offers a 50-130x performance improvement for exponentiations over CryptoGroups implementations while preserving type safety and ease of use.
 
 ## Features
 
-- **Full CryptoGroups.jl Compatibility**: Drop-in replacement for CryptoGroups.jl with identical API
-- **High Performance**: 10-20x faster group exponentiations using OpenSSL's optimized implementation
+- **Full CryptoGroups.jl Compatibility**: Seamlessly construct `@ECPoint` and `@ECGroup` types
+- **Zero-Cost Abstractions**: Group operations are optimized to spend time only in core OpenSSL functions (`EC_POINT_add` and `EC_POINT_mul`)
+- **Efficient Resource Management**: Reuses contexts and group pointers for optimal performance
+- **Robust Multithreading Support**: Parallel processing for batch operations
 - **Type Safety**: Maintains all type safety guarantees from CryptoGroups.jl
-- **Comprehensive Curve Support**: Implements all standard curves available in OpenSSL
+- **Comprehensive Curve Support**: Includes all standard curves available in OpenSSL
 
 ## Installation
 
@@ -115,10 +117,11 @@ Additional curves (c2pnb/c2tnb series) are also implemented but are less commonl
 The package works seamlessly with cryptographic protocol implementations:
 
 ```julia
+using CryptoGroups
 using OpenSSLGroups
-using ShuffleProofs
-using SigmaProofs.ElGamal
-using SigmaProofs.Verificatum
+using ShuffleProofs: shuffle, verify
+using SigmaProofs.ElGamal: Enc
+using SigmaProofs.Verificatum: ProtocolSpec
 
 # Set up ElGamal encryption with OpenSSL curve
 g = @ECGroup{OpenSSLGroups.Prime256v1}()
@@ -129,12 +132,43 @@ pk = g^sk
 enc = Enc(pk, g)
 
 # Example encryption and shuffle proof
-𝐦 = [g^4, g^2, g^3]
-𝐞 = enc(𝐦, [2, 3, 4]) .|> ElGamalRow
+plaintexts = [g^4, g^2, g^3] .|> tuple
+ciphertexts = enc(plaintexts, [2, 3, 4]) 
 
 verifier = ProtocolSpec(; g)
-simulator = shuffle(𝐞, g, pk, verifier)
+simulator = shuffle(ciphertexts, g, pk, verifier)
 @assert verify(simulator)
+```
+
+## Multithreading Example
+
+```
+using CryptoGroups
+using OpenSSLGroups
+using Base.Threads
+
+# Create a group and base point
+G = @ECGroup{OpenSSLGroups.SecP256k1}
+g = G()
+
+# Parallel scalar multiplications
+function parallel_scalarmul(g, scalars)
+    n = length(scalars)
+    results = Vector{typeof(g)}(undef, n)
+    
+    @threads for i in 1:n
+        results[i] = g^scalars[i]
+    end
+    
+    return results
+end
+
+# Example usage
+scalars = rand(1:order(G), 1000)
+points = parallel_scalarmul(g, scalars)
+
+# Verify results
+@assert all(points[i] == g^scalars[i] for i in 1:length(scalars))
 ```
 
 ## Performance Comparison
@@ -147,14 +181,17 @@ using OpenSSLGroups
 using CryptoGroups
 
 # OpenSSL implementation
-P1 = SecP256k1
-p1 = P1()
-@btime $p1 ^ 123
+p1 = @ECGroup{OpenSSLGroups.Prime256v1}()
+p2 = p1^123
+@btime $p1 ^ (order(p1) - 1)
+@btime $p1 * $p2
 
 # Pure Julia implementation
-P2 = @ECGroup{P_256}
-p2 = P2()
-@btime $p2 ^ 123
+q1 = @ECGroup{P_256}()
+q2 = q1^123
+@btime $q1 ^ (order(q1) - 1)
+@btime $q1 * $q2
 
 # Results show ~10-20x speedup for typical operations
 ```
+Preliminary results show that exponentiations are 50x faster, and multiplications are 130x faster than that implemented in CryptoGroups.

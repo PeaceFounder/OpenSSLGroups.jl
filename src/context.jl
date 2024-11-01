@@ -23,6 +23,10 @@ end
 # Set value for current thread
 function Base.setindex!(t::ThreadLocal{T}, v::T) where T
     tid = Base.Threads.threadid()
+    t[tid] = v
+end
+
+function Base.setindex!(t::ThreadLocal{T}, v::T, tid::Int) where T
     t.values[tid] = v
 end
 
@@ -31,7 +35,6 @@ function Base.delete!(t::ThreadLocal)
     tid = Base.Threads.threadid()
     t.values[tid] = nothing
 end
-
 
 # Thread context structure
 mutable struct OpenSSLContext

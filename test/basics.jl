@@ -2,7 +2,7 @@ using Test
 using InteractiveUtils
 
 using OpenSSLGroups
-import OpenSSLGroups: SecP256k1, gx, gy, order, cofactor, curve_parameters, value, list_curves, field, spec, octet_legacy
+import OpenSSLGroups: gx, gy, order, cofactor, curve_parameters, value, list_curves, field, spec, octet_legacy
 import CryptoGroups: concretize_type
 import CryptoGroups.Curves: ECPoint
 

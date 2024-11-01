@@ -96,25 +96,36 @@ macro prime_curve(curve_name, struct_name::Symbol)
     else
         string(curve_name) 
     end
+
+    group_nid = get_curve_nid(curve_str)
     
     return quote
         mutable struct $(esc(struct_name)) <: OpenSSLPrimePoint
             pointer::Ptr{Nothing}
-            function $(esc(struct_name))(x::Ptr{Nothing})
+            function $(esc(struct_name))(x::Ptr{Nothing}; skip_finalizer::Bool=false)
                 point = new(x)
 
-                finalizer(point) do p
-                    if p.pointer != C_NULL
-                        @ccall libcrypto.EC_POINT_free(p.pointer::Ptr{Nothing})::Cvoid
-                        p.pointer = C_NULL
+                if !skip_finalizer
+                    finalizer(point) do p
+                        if p.pointer != C_NULL
+                            @ccall libcrypto.EC_POINT_free(p.pointer::Ptr{Nothing})::Cvoid
+                            p.pointer = C_NULL
+                        end
                     end
                 end
 
                 return point
             end
         end
-        
-        $(esc(:group_pointer))(::Type{$(esc(struct_name))}) = $(esc(:group_pointer))($(esc(:get_curve_nid))($curve_str))
+
+        let _group_ptr = nothing
+            global function $(esc(:group_pointer))(::Type{$(esc(struct_name))})
+                if _group_ptr === nothing
+                    _group_ptr = $(esc(:group_pointer))($group_nid)
+                end
+                return _group_ptr
+            end
+        end
     end
 end
 
@@ -128,24 +139,35 @@ macro binary_curve(curve_name, struct_name::Symbol)
         string(curve_name) 
     end
     
+    group_nid = get_curve_nid(curve_str)
+
     return quote
         mutable struct $(esc(struct_name)) <: OpenSSLBinaryPoint
             pointer::Ptr{Nothing}
-            function $(esc(struct_name))(x::Ptr{Nothing})
+            function $(esc(struct_name))(x::Ptr{Nothing}; skip_finalizer::Bool=false)
                 point = new(x)
-
-                finalizer(point) do p
-                    if p.pointer != C_NULL
-                        @ccall libcrypto.EC_POINT_free(p.pointer::Ptr{Nothing})::Cvoid
-                        p.pointer = C_NULL
+                
+                if !skip_finalizer
+                    finalizer(point) do p
+                        if p.pointer != C_NULL
+                            @ccall libcrypto.EC_POINT_free(p.pointer::Ptr{Nothing})::Cvoid
+                            p.pointer = C_NULL
+                        end
                     end
                 end
 
                 return point
             end
         end
-        
-        $(esc(:group_pointer))(::Type{$(esc(struct_name))}) = $(esc(:group_pointer))($(esc(:get_curve_nid))($curve_str))
+
+        let _group_ptr = nothing
+            global function $(esc(:group_pointer))(::Type{$(esc(struct_name))})
+                if _group_ptr === nothing
+                    _group_ptr = $(esc(:group_pointer))($group_nid)
+                end
+                return _group_ptr
+            end
+        end
     end
 end
 

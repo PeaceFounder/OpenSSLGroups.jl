@@ -4,7 +4,7 @@ function generator(::Type{P}) where P <: OpenSSLPoint
     group = group_pointer(P)
     result = @ccall libcrypto.EC_POINT_new(group::Ptr{Cvoid})::Ptr{Cvoid}
     point = @ccall libcrypto.EC_GROUP_get0_generator(group::Ptr{Cvoid})::Ptr{Cvoid}
-    return P(point)
+    return P(point; skip_finalizer=true)
 end
 
 (::Type{P})() where P <: OpenSSLPoint = generator(P)
@@ -32,7 +32,8 @@ function Base.iszero(point::P) where P <: OpenSSLPoint
     return ret == 1
 end
 
-function Base.zero(::Type{P}) where P <: OpenSSLPoint
+# The performance could be improved by evaluating it only once per group element
+function Base.zero(::Type{P}) where P <: OpenSSLPoint 
     group = group_pointer(P)
     result = @ccall libcrypto.EC_POINT_new(group::Ptr{Cvoid})::Ptr{Cvoid}
     ret = @ccall libcrypto.EC_POINT_set_to_infinity(
