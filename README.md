@@ -142,7 +142,7 @@ simulator = shuffle(ciphertexts, g, pk, verifier)
 
 ## Multithreading Example
 
-```
+```julia
 using CryptoGroups
 using OpenSSLGroups
 using Base.Threads
