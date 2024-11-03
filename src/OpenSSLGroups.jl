@@ -18,10 +18,10 @@ export octet, order, value
 
 include("utils.jl")
 include("context.jl")
+include("point.jl")
 
 # The context is a scratchspace and never leaves internal function boundary, hence, using threadid is appropriate
-global THREAD_CTXS::ThreadLocal{OpenSSLContext} = ThreadLocal{OpenSSLContext}()
-THREAD_CTXS[1] = OpenSSLContext()
+global THREAD_CTXS::ThreadLocal{OpenSSLContext}
 
 function get_ctx()
     @assert haskey(THREAD_CTXS) "Thread context not initialized"
@@ -37,10 +37,8 @@ function __init__()
     end
 end
 
-include("point.jl")
+__init__() # ctx is needed at compile time to inlay values for group_pointer, field and cofactor
 include("curves.jl")
-
-delete!(THREAD_CTXS)
 
 # Some compatability methods for ECPoint and ECGroup
 
