@@ -1,5 +1,7 @@
 abstract type OpenSSLPoint <: AbstractPoint end
 
+group_pointer(::Type{P}) where P <: OpenSSLPoint = group_pointer(get_curve_nid(P))
+
 function generator(::Type{P}) where P <: OpenSSLPoint
     group = group_pointer(P)
     result = @ccall libcrypto.EC_POINT_new(group::Ptr{Cvoid})::Ptr{Cvoid}
@@ -46,7 +48,7 @@ function Base.zero(::Type{P}) where P <: OpenSSLPoint
     return P(result)
 end
 
-function (::Type{P})(bytes::Vector{UInt8}) where P <: OpenSSLPoint
+function (::Type{P})(bytes::Union{Vector{UInt8}, SubArray{UInt8, 1}}) where P <: OpenSSLPoint
     ctx = get_ctx()
     group = group_pointer(P)
     point = @ccall OpenSSL_jll.libcrypto.EC_POINT_new(group::Ptr{Cvoid})::Ptr{Cvoid}
@@ -54,31 +56,48 @@ function (::Type{P})(bytes::Vector{UInt8}) where P <: OpenSSLPoint
         error("Failed to create new EC_POINT")
     end
 
-    ret = @ccall OpenSSL_jll.libcrypto.EC_POINT_oct2point(
-        group::Ptr{Cvoid},
-        point::Ptr{Cvoid},
-        bytes::Ptr{UInt8},
-        length(bytes)::Csize_t,
-        ctx::Ptr{Cvoid}
-    )::Cint
+    GC.@preserve bytes begin
+        ret = @ccall OpenSSL_jll.libcrypto.EC_POINT_oct2point(
+            group::Ptr{Cvoid},
+            point::Ptr{Cvoid},
+            bytes::Ptr{UInt8},
+            length(bytes)::Csize_t,
+            ctx::Ptr{Cvoid}
+        )::Cint
+    end
+
     if ret != 1
         @ccall OpenSSL_jll.libcrypto.EC_POINT_free(point::Ptr{Cvoid})::Cvoid
         error("Failed to initialize point from bytes")
     end
+
     return P(point)    
 end
 
-function octet_legacy(point::P) where P <: OpenSSLPoint
+function octet(point::P; mode=:uncompressed) where P <: OpenSSLPoint
+
+    if mode == :compressed
+        format = 2
+        buffer_size = 1 + div(bitlength(field(P)), 8, RoundUp)
+    elseif mode == :uncompressed
+        format = 4
+        buffer_size = 1 + 2 * div(bitlength(field(P)), 8, RoundUp)
+    elseif mode == :hybrid
+        format = 6
+        buffer_size = 1 + 2 * div(bitlength(field(P)), 8, RoundUp)
+    else
+        error("Mode $mode not supported")
+    end
+
     ctx = get_ctx()
     group = group_pointer(P)
-    buffer_size = 200  # Adjust if needed
     buffer = Vector{UInt8}(undef, buffer_size)
 
     GC.@preserve buffer begin
         _length = @ccall libcrypto.EC_POINT_point2oct(
             group::Ptr{Cvoid},
             pointer(point)::Ptr{Cvoid},
-            4::Cint,
+            format::Cint,
             buffer::Ptr{UInt8},
             buffer_size::Csize_t,
             ctx::Ptr{Cvoid}
@@ -87,8 +106,11 @@ function octet_legacy(point::P) where P <: OpenSSLPoint
 
     if _length == 0
         error("Failed to convert result to octet string")
+    elseif _length == 1
+        return @view buffer[1:1]
+    else
+        return buffer
     end
-    return buffer[1:_length]
 end
 
 function Base.:+(x::P, y::P) where P <: OpenSSLPoint
@@ -356,9 +378,7 @@ end
 
 (::Type{P})((x, y)::Tuple{Integer, Integer}) where P <: OpenSSLPrimePoint = P(x, y)
 
-modulus(::Type{P}) where P <: OpenSSLPrimePoint = curve_parameters(P) |> first
-
-field(::Type{P}) where P <: OpenSSLPrimePoint = FP{static(modulus(P))}
+field(::Type{P}) where P <: OpenSSLPrimePoint = FP{static(curve_parameters(P) |> first)}
 
 function curve_parameters(::Type{P}) where P <: OpenSSLPrimePoint
     ctx = get_ctx()

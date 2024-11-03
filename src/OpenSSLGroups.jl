@@ -18,11 +18,10 @@ export octet, order, value
 
 include("utils.jl")
 include("context.jl")
-include("point.jl")
-include("curves.jl")
 
 # The context is a scratchspace and never leaves internal function boundary, hence, using threadid is appropriate
-global THREAD_CTXS::ThreadLocal{OpenSSLContext}
+global THREAD_CTXS::ThreadLocal{OpenSSLContext} = ThreadLocal{OpenSSLContext}()
+THREAD_CTXS[1] = OpenSSLContext()
 
 function get_ctx()
     @assert haskey(THREAD_CTXS) "Thread context not initialized"
@@ -37,6 +36,11 @@ function __init__()
         THREAD_CTXS[tid] = OpenSSLContext()
     end
 end
+
+include("point.jl")
+include("curves.jl")
+
+delete!(THREAD_CTXS)
 
 # Some compatability methods for ECPoint and ECGroup
 
@@ -68,7 +72,7 @@ function Base.convert(::Type{P}, x::NTuple{2, <:Integer}) where P <: OpenSSLPrim
     end
 end
 
-function Base.convert(::Type{P}, x::Vector{UInt8}) where P <: OpenSSLPoint 
+function Base.convert(::Type{P}, x::AbstractVector{UInt8}) where P <: OpenSSLPoint 
     if iszero(x[1])
         return zero(P)
     else
@@ -76,7 +80,7 @@ function Base.convert(::Type{P}, x::Vector{UInt8}) where P <: OpenSSLPoint
     end
 end
 
-function Base.convert(::Type{ECPoint{P, S}}, x::Vector{UInt8}; allow_zero=false) where {P <: OpenSSLPoint, S}
+function Base.convert(::Type{ECPoint{P, S}}, x::AbstractVector{UInt8}; allow_zero=false) where {P <: OpenSSLPoint, S}
     return ECPoint{P, S}(convert(P, x); allow_zero)
 end
 
@@ -89,5 +93,6 @@ function Base.:+(x::ECPoint{P, S}, y::ECPoint{P, S}) where {P <: OpenSSLPoint, S
     return ECPoint{P, S}(x.p + y.p; skip_validation=true)
 end
 
+octet(x::ECPoint{P}; mode = :uncompressed) where P <: OpenSSLPoint = octet(x.p; mode)
 
 end # module OpenSSLGroups

@@ -31,6 +31,8 @@ function test_group(G)
 
     @test isone(g/g)
 
+#    @infiltrate
+
     @test G(octet(one(G)); allow_one=true) == one(G)
     @test G(value(one(G)); allow_one=true) == one(G)
 

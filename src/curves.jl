@@ -118,6 +118,17 @@ macro prime_curve(curve_name, struct_name::Symbol)
             end
         end
 
+        $(esc(:get_curve_nid))(::Type{$(esc(struct_name))}) = $group_nid
+
+        # We are implicitly allso setting group pointer here
+        let field_type = field($(esc(struct_name)))
+            global $(esc(:field))(::Type{$(esc(struct_name))}) = field_type
+        end
+
+        let _cofactor = cofactor($(esc(struct_name)))
+            global $(esc(:cofactor))(::Type{$(esc(struct_name))}) = _cofactor
+        end
+
         let _group_ptr = nothing
             global function $(esc(:group_pointer))(::Type{$(esc(struct_name))})
                 if _group_ptr === nothing
@@ -158,6 +169,17 @@ macro binary_curve(curve_name, struct_name::Symbol)
 
                 return point
             end
+        end
+
+        $(esc(:get_curve_nid))(::Type{$(esc(struct_name))}) = $group_nid
+
+        # We are implicitly allso setting group pointer here
+        let field_type = field($(esc(struct_name)))
+            global $(esc(:field))(::Type{$(esc(struct_name))}) = field_type
+        end
+
+        let _cofactor = cofactor($(esc(struct_name)))
+            global $(esc(:cofactor))(::Type{$(esc(struct_name))}) = _cofactor
         end
 
         let _group_ptr = nothing

@@ -2,7 +2,7 @@ using Test
 using InteractiveUtils
 
 using OpenSSLGroups
-import OpenSSLGroups: gx, gy, order, cofactor, curve_parameters, value, list_curves, field, spec, octet_legacy
+import OpenSSLGroups: gx, gy, order, cofactor, curve_parameters, value, list_curves, field, spec
 import CryptoGroups: concretize_type
 import CryptoGroups.Curves: ECPoint
 
@@ -12,6 +12,11 @@ function test_curve(P)
 
     @test P(octet(p1)) == p1
     @test P(octet(p1; mode = :compressed)) == p1
+    @test P(octet(p1; mode = :hybrid)) == p1
+    @test octet(zero(P)) == UInt8[0]
+    @test octet(zero(P); mode = :compressed) == UInt8[0]
+    @test convert(P, UInt8[0]) == zero(P)
+
     @test P(gx(p1), gy(p1)) == p1
     @test P(value(p1)) == p1
 
