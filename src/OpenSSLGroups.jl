@@ -16,28 +16,32 @@ using Base.GMP
 
 export octet, order, value
 
-include("utils.jl")
-include("context.jl")
-include("point.jl")
-
-# The context is a scratchspace and never leaves internal function boundary, hence, using threadid is appropriate
-global THREAD_CTXS::ThreadLocal{OpenSSLContext}
-
-function get_ctx()
-    @assert haskey(THREAD_CTXS) "Thread context not initialized"
-    return THREAD_CTXS[].ctx
-end
-
-function __init__()
-
-    global THREAD_CTXS = ThreadLocal{OpenSSLContext}()
-
-    for tid in 1:Threads.nthreads()
-        THREAD_CTXS[tid] = OpenSSLContext()
+mutable struct OpenSSLContext
+    ctx::Ptr{Nothing}
+    
+    function OpenSSLContext()
+        ctx = ccall((:BN_CTX_new, libcrypto), Ptr{Nothing}, ())
+        if ctx == C_NULL
+            throw(OpenSSLError("Failed to create BN_CTX"))
+        end
+        obj = new(ctx)
+        finalizer(obj) do x
+            if x.ctx != C_NULL
+                @ccall libcrypto.BN_CTX_free(x.ctx::Ptr{Nothing})::Cvoid
+                x.ctx = C_NULL
+            end
+        end
+        return obj
     end
 end
 
-__init__() # ctx is needed at compile time to inlay values for group_pointer, field and cofactor
+function get_ctx()
+    ctx = get!(OpenSSLContext, task_local_storage(), :ctx)::OpenSSLContext
+    return ctx.ctx
+end
+
+include("utils.jl")
+include("point.jl")
 include("curves.jl")
 
 # Some compatability methods for ECPoint and ECGroup

@@ -1,7 +1,7 @@
 name = "OpenSSLGroups"
 uuid = "50771dd1-78b8-490c-a786-5ddc80ce15da"
 authors = ["Janis Erdmanis <janiserdmanis@protonmail.ch>"]
-version = "0.1.0"
+version = "0.1.1"
 
 [deps]
 CryptoGroups = "bc997328-bedd-407e-bcd3-5758e064a52d"
